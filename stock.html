@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台股進出場分析工具</title>
+<style>
+:root{
+  --bg:#101418; --panel:#1a2129; --panel2:#212a34; --line:#2e3a46;
+  --text:#e8edf2; --muted:#8fa0af;
+  --up:#e5484d; --down:#2fbf71; /* 台股習慣:紅漲綠跌 */
+  --accent:#f2b544; --accent2:#5aa9e6;
+  font-size:15px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;padding:20px;max-width:1080px;margin:0 auto}
+h1{font-size:1.5rem;letter-spacing:.08em;margin-bottom:4px}
+h1 span{color:var(--accent)}
+.sub{color:var(--muted);font-size:.85rem;margin-bottom:18px}
+.tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.tab{background:var(--panel);border:1px solid var(--line);color:var(--muted);padding:8px 18px;border-radius:8px;cursor:pointer;font-size:.95rem}
+.tab.active{background:var(--accent);color:#1a1a1a;border-color:var(--accent);font-weight:700}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+.card h2{font-size:1.05rem;margin-bottom:12px;color:var(--accent2)}
+textarea,input,select{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px 10px;font-size:.95rem;width:100%}
+textarea{min-height:110px;font-family:monospace}
+label{display:block;font-size:.8rem;color:var(--muted);margin:10px 0 4px}
+button{background:var(--accent2);border:none;color:#0e1520;font-weight:700;padding:9px 20px;border-radius:8px;cursor:pointer;font-size:.95rem;margin-top:12px}
+button.warn{background:var(--up);color:#fff}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.stat{background:var(--panel2);border-radius:10px;padding:12px;text-align:center}
+.stat .v{font-size:1.3rem;font-weight:700}
+.stat .l{font-size:.75rem;color:var(--muted);margin-top:2px}
+.up{color:var(--up)} .down{color:var(--down)}
+.signal{padding:14px;border-radius:10px;font-size:1.05rem;font-weight:700;text-align:center;margin-top:12px}
+.sig-buy{background:rgba(229,72,77,.15);border:1px solid var(--up);color:var(--up)}
+.sig-sell{background:rgba(47,191,113,.15);border:1px solid var(--down);color:var(--down)}
+.sig-hold{background:rgba(143,160,175,.12);border:1px solid var(--line);color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:.88rem;margin-top:10px}
+th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:right}
+th{color:var(--muted);font-weight:500}
+th:first-child,td:first-child{text-align:left}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+@media(max-width:640px){.row2,.row3{grid-template-columns:1fr}}
+canvas{width:100%;background:var(--panel2);border-radius:10px;margin-top:12px}
+.reason{font-size:.85rem;color:var(--muted);margin-top:8px;line-height:1.6}
+.del{color:var(--up);cursor:pointer;font-size:.8rem}
+.note{font-size:.78rem;color:var(--muted);margin-top:14px;line-height:1.5}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<h1>台股<span>進出場</span>分析工具</h1>
+<div class="sub">技術指標訊號分析 × 交易損益紀錄（資料自動保存）</div>
+
+<div class="tabs">
+  <div class="tab active" data-t="analyze">📈 進出場分析</div>
+  <div class="tab" data-t="journal">📒 交易紀錄</div>
+</div>
+
+<!-- ===== 分析頁 ===== -->
+<div id="page-analyze">
+  <div class="card">
+    <h2>輸入歷史收盤價</h2>
+    <div class="row2">
+      <div>
+        <label>股票名稱 / 代號</label>
+        <input id="stockName" placeholder="例如：2330 台積電">
+      </div>
+      <div>
+        <label>資料來源</label>
+        <select id="dataMode">
+          <option value="paste">貼上收盤價（由舊到新，逗號/空白/換行分隔）</option>
+          <option value="demo">使用示範資料</option>
+        </select>
+      </div>
+    </div>
+    <label>收盤價序列（建議至少 30 筆，越多越準）</label>
+    <textarea id="priceInput" placeholder="580, 585, 590, 588, 595 ..."></textarea>
+    <button onclick="analyze()">開始分析</button>
+    <button style="background:var(--accent);color:#1a1a1a" onclick="reloadData(true)" id="fetchBtn">🔄 重新載入最新資料</button>
+    <div class="note" id="fetchStatus"></div>
+  </div>
+
+  <div id="result" class="hidden">
+    <div class="card">
+      <h2 id="resTitle">分析結果</h2>
+      <div class="grid">
+        <div class="stat"><div class="v" id="sPrice">-</div><div class="l">最新收盤</div></div>
+        <div class="stat"><div class="v" id="sMA5">-</div><div class="l">MA5</div></div>
+        <div class="stat"><div class="v" id="sMA20">-</div><div class="l">MA20</div></div>
+        <div class="stat"><div class="v" id="sRSI">-</div><div class="l">RSI(14)</div></div>
+        <div class="stat"><div class="v" id="sK">-</div><div class="l">K 值</div></div>
+        <div class="stat"><div class="v" id="sD">-</div><div class="l">D 值</div></div>
+      </div>
+      <div id="sigBox" class="signal sig-hold">-</div>
+      <div class="reason" id="sigReason"></div>
+      <div class="card" style="background:var(--panel2);margin-top:14px;margin-bottom:0">
+        <h2>💰 參考價位（依技術分析機械計算）</h2>
+        <div class="grid">
+          <div class="stat"><div class="v" id="pSupport">-</div><div class="l">支撐（近20日低點）</div></div>
+          <div class="stat"><div class="v" id="pResist">-</div><div class="l">壓力（近20日高點）</div></div>
+          <div class="stat"><div class="v up" id="pEntry">-</div><div class="l">建議進場區間</div></div>
+          <div class="stat"><div class="v" id="pStop">-</div><div class="l">停損價（進場後跌破出場）</div></div>
+          <div class="stat"><div class="v down" id="pTarget">-</div><div class="l">停利目標</div></div>
+        </div>
+        <div class="reason" id="pReason"></div>
+      </div>
+      <canvas id="chart" height="260"></canvas>
+      <div class="note">⚠️ 本工具僅依技術指標提供參考訊號，非投資建議。股市有風險，進出場請自行判斷並控管資金。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 交易紀錄頁 ===== -->
+<div id="page-journal" class="hidden">
+  <div class="card">
+    <h2>新增交易</h2>
+    <div class="row3">
+      <div><label>股票</label><input id="jStock" placeholder="2330 台積電"></div>
+      <div><label>買進日期</label><input id="jBuyDate" type="date"></div>
+      <div><label>賣出日期（未賣可留空）</label><input id="jSellDate" type="date"></div>
+    </div>
+    <div class="row3">
+      <div><label>買進價</label><input id="jBuy" type="number" step="0.01"></div>
+      <div><label>賣出價（未賣可留空）</label><input id="jSell" type="number" step="0.01"></div>
+      <div><label>股數</label><input id="jQty" type="number" value="1000"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:10px">
+      <input type="checkbox" id="jFee" checked style="width:auto"> 計入手續費 0.1425%（買賣各一次）＋證交稅 0.3%（賣出）
+    </label>
+    <button onclick="addTrade()">加入紀錄</button>
+  </div>
+
+  <div class="card">
+    <h2>損益總覽</h2>
+    <div class="grid">
+      <div class="stat"><div class="v" id="tTotal">0</div><div class="l">總損益 (元)</div></div>
+      <div class="stat"><div class="v up" id="tWin">0</div><div class="l">賺錢筆數</div></div>
+      <div class="stat"><div class="v down" id="tLose">0</div><div class="l">虧錢筆數</div></div>
+      <div class="stat"><div class="v" id="tRate">-</div><div class="l">勝率</div></div>
+      <div class="stat"><div class="v" id="tOpen">0</div><div class="l">未平倉筆數</div></div>
+    </div>
+    <table>
+      <thead><tr><th>股票</th><th>買進</th><th>賣出</th><th>股數</th><th>損益(元)</th><th>報酬率</th><th></th></tr></thead>
+      <tbody id="tBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="prices_data.js" id="dataScript"></script>
+<script>
+/* ---------- 自動載入 + 自動監看本機資料 ---------- */
+let lastUpdated = null;
+
+function reloadData(manual){
+  // 動態重新載入 prices_data.js（加時間戳避免快取）
+  const old=document.getElementById('dataScript');
+  if(old)old.remove();
+  const s=document.createElement('script');
+  s.id='dataScript';
+  s.src='prices_data.js?ts='+Date.now();
+  s.onload=()=>applyData(manual);
+  s.onerror=()=>{
+    if(manual)document.getElementById('fetchStatus').textContent=
+      '❌ 找不到 prices_data.js，請先執行 run_analyzer.bat 或 auto_update.bat 抓取資料。';
+  };
+  document.body.appendChild(s);
+}
+
+function applyData(manual){
+  if(!(window.TWSE_DATA&&TWSE_DATA.prices&&TWSE_DATA.prices.length))return;
+  if(TWSE_DATA.updated===lastUpdated){
+    if(manual)document.getElementById('fetchStatus').textContent=
+      'ℹ️ 資料沒有變化（最後更新 '+TWSE_DATA.updated+'）。要更新請執行 bat 抓價。';
+    return;
+  }
+  lastUpdated=TWSE_DATA.updated;
+  document.getElementById('stockName').value=TWSE_DATA.stock||'';
+  document.getElementById('priceInput').value=TWSE_DATA.prices.join(', ');
+  document.getElementById('fetchStatus').textContent=
+    '✅ 已載入 '+TWSE_DATA.stock+'（更新時間 '+TWSE_DATA.updated+'，共 '+TWSE_DATA.prices.length+' 筆）｜每 60 秒自動檢查更新';
+  if(TWSE_DATA.prices.length>=25)analyze();
+}
+
+window.addEventListener('load',()=>{
+  applyData(false);          // 先套用隨頁面載入的資料
+  setInterval(()=>reloadData(false),60000);  // 每60秒檢查一次
+});
+</script>
+<script>
+/* ---------- 分頁 ---------- */
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('page-analyze').classList.toggle('hidden',t.dataset.t!=='analyze');
+  document.getElementById('page-journal').classList.toggle('hidden',t.dataset.t!=='journal');
+});
+
+/* ---------- 指標計算 ---------- */
+const sma=(a,n,i)=>{if(i<n-1)return null;let s=0;for(let j=i-n+1;j<=i;j++)s+=a[j];return s/n;};
+function rsi(a,n=14){
+  if(a.length<n+1)return null;
+  let g=0,l=0;
+  for(let i=a.length-n;i<a.length;i++){const d=a[i]-a[i-1];d>0?g+=d:l-=d;}
+  if(l===0)return 100;
+  return 100-100/(1+(g/n)/(l/n));
+}
+function kd(a,n=9){
+  let K=50,D=50;
+  for(let i=n-1;i<a.length;i++){
+    const win=a.slice(i-n+1,i+1),hi=Math.max(...win),lo=Math.min(...win);
+    const rsv=hi===lo?50:(a[i]-lo)/(hi-lo)*100;
+    K=K*2/3+rsv/3; D=D*2/3+K/3;
+  }
+  return {K,D};
+}
+
+/* ---------- 分析 ---------- */
+function analyze(){
+  const raw=document.getElementById('priceInput').value.trim();
+  const prices=raw.split(/[,\s\n]+/).map(Number).filter(x=>!isNaN(x)&&x>0);
+  if(prices.length<25){alert('請至少輸入 25 筆有效收盤價');return;}
+  const i=prices.length-1;
+  const last=prices[i], ma5=sma(prices,5,i), ma20=sma(prices,20,i);
+  const ma5p=sma(prices,5,i-1), ma20p=sma(prices,20,i-1);
+  const R=rsi(prices), {K,D}=kd(prices);
+
+  document.getElementById('result').classList.remove('hidden');
+  document.getElementById('resTitle').textContent=(document.getElementById('stockName').value||'股票')+' 分析結果';
+  document.getElementById('sPrice').textContent=last.toFixed(2);
+  document.getElementById('sMA5').textContent=ma5.toFixed(2);
+  document.getElementById('sMA20').textContent=ma20.toFixed(2);
+  document.getElementById('sRSI').textContent=R.toFixed(1);
+  document.getElementById('sK').textContent=K.toFixed(1);
+  document.getElementById('sD').textContent=D.toFixed(1);
+
+  // 訊號評分
+  let score=0, reasons=[];
+  if(ma5p<=ma20p && ma5>ma20){score+=2;reasons.push('✅ MA5 黃金交叉 MA20（偏多）');}
+  if(ma5p>=ma20p && ma5<ma20){score-=2;reasons.push('🔻 MA5 死亡交叉 MA20（偏空）');}
+  if(ma5>ma20)score+=1; else score-=1;
+  reasons.push(ma5>ma20?'• 短均在長均之上，趨勢偏多':'• 短均在長均之下，趨勢偏空');
+  if(R<30){score+=2;reasons.push('✅ RSI < 30 超賣，可留意反彈進場');}
+  else if(R>70){score-=2;reasons.push('🔻 RSI > 70 超買，注意回檔風險');}
+  if(K>D && K<80){score+=1;reasons.push('• KD 金叉且未過熱');}
+  if(K<D && K>20){score-=1;reasons.push('• KD 死叉');}
+  if(last>ma20*1.1){score-=1;reasons.push('• 價格乖離 MA20 超過 10%，追高風險');}
+
+  const box=document.getElementById('sigBox');
+  box.className='signal';
+  if(score>=3){box.classList.add('sig-buy');box.textContent='🔴 訊號：偏多，可考慮進場（分批布局）';}
+  else if(score<=-3){box.classList.add('sig-sell');box.textContent='🟢 訊號：偏空，可考慮出場／觀望';}
+  else{box.classList.add('sig-hold');box.textContent='⚪ 訊號：中性，建議續抱觀察或空手等待';}
+  document.getElementById('sigReason').innerHTML='評分：'+score+'<br>'+reasons.join('<br>');
+
+  /* ---- 參考價位計算 ---- */
+  const win20=prices.slice(-20);
+  const support=Math.min(...win20), resist=Math.max(...win20);
+  // 進場區間：偏多時取「MA20 與支撐之間的回檔區」；價格已低於MA20則取支撐附近
+  let entryLo, entryHi;
+  if(last>=ma20){ entryLo=ma20*0.99; entryHi=ma20*1.01; }
+  else { entryLo=support; entryHi=Math.min(last, support*1.03); }
+  const stop=(entryLo*0.93).toFixed(1);          // 進場價下方約7%停損
+  const target1=(entryHi*1.10).toFixed(1);       // 第一停利 +10%
+  const target2=resist.toFixed(1);               // 或前高壓力
+  document.getElementById('pSupport').textContent=support.toFixed(1);
+  document.getElementById('pResist').textContent=resist.toFixed(1);
+  document.getElementById('pEntry').textContent=entryLo.toFixed(1)+' ~ '+entryHi.toFixed(1);
+  document.getElementById('pStop').textContent=stop;
+  document.getElementById('pTarget').textContent=target1+' / '+target2;
+  document.getElementById('pReason').innerHTML=
+    '計算邏輯：<br>'+
+    '• 進場區間：'+(last>=ma20?'目前價在 MA20 之上，等回測 MA20（'+ma20.toFixed(1)+'）附近再進，避免追高':'目前價在 MA20 之下，於支撐 '+support.toFixed(1)+' 附近分批試單')+'<br>'+
+    '• 停損：進場價下方 7%（'+stop+'），跌破代表判斷錯誤，果斷出場保本<br>'+
+    '• 停利：+10%（'+target1+'）先出一半，其餘看能否挑戰前高 '+target2+'<br>'+
+    '• 若進場後訊號轉為「偏空」，不論價位建議先出場觀望';
+
+  drawChart(prices);
+}
+
+/* ---------- 畫圖 ---------- */
+function drawChart(p){
+  const c=document.getElementById('chart');
+  c.width=c.clientWidth*2; c.height=520;
+  const ctx=c.getContext('2d'); ctx.scale(1,1);
+  const W=c.width,H=c.height,pad=50;
+  const min=Math.min(...p)*0.98,max=Math.max(...p)*1.02;
+  const x=i=>pad+(W-pad*2)*i/(p.length-1);
+  const y=v=>H-pad-(H-pad*2)*(v-min)/(max-min);
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='#2e3a46';ctx.beginPath();
+  for(let g=0;g<5;g++){const yy=pad+(H-pad*2)*g/4;ctx.moveTo(pad,yy);ctx.lineTo(W-pad,yy);}
+  ctx.stroke();
+  ctx.fillStyle='#8fa0af';ctx.font='20px sans-serif';
+  for(let g=0;g<5;g++){const v=max-(max-min)*g/4;ctx.fillText(v.toFixed(0),5,pad+(H-pad*2)*g/4+6);}
+  const line=(arr,col)=>{ctx.strokeStyle=col;ctx.lineWidth=3;ctx.beginPath();let started=false;
+    arr.forEach((v,i)=>{if(v==null)return;if(!started){ctx.moveTo(x(i),y(v));started=true;}else ctx.lineTo(x(i),y(v));});ctx.stroke();};
+  line(p,'#e8edf2');
+  line(p.map((_,i)=>sma(p,5,i)),'#f2b544');
+  line(p.map((_,i)=>sma(p,20,i)),'#5aa9e6');
+  ctx.font='22px sans-serif';
+  ctx.fillStyle='#e8edf2';ctx.fillText('收盤價',W-320,40);
+  ctx.fillStyle='#f2b544';ctx.fillText('MA5',W-220,40);
+  ctx.fillStyle='#5aa9e6';ctx.fillText('MA20',W-140,40);
+}
+
+/* ---------- 交易紀錄 (persistent storage) ---------- */
+let trades=[];
+async function loadTrades(){
+  try{const r=await window.storage.get('tw-stock-trades');trades=r?JSON.parse(r.value):[];}
+  catch(e){trades=[];}
+  renderTrades();
+}
+async function saveTrades(){
+  try{await window.storage.set('tw-stock-trades',JSON.stringify(trades));}
+  catch(e){console.error('儲存失敗',e);}
+}
+function calcPnl(t){
+  if(t.sell==null)return null;
+  const feeRate=t.fee?0.001425:0, taxRate=t.fee?0.003:0;
+  const cost=t.buy*t.qty*(1+feeRate);
+  const rev=t.sell*t.qty*(1-feeRate-taxRate);
+  return rev-cost;
+}
+function addTrade(){
+  const buy=parseFloat(document.getElementById('jBuy').value);
+  const qty=parseInt(document.getElementById('jQty').value);
+  if(!buy||!qty){alert('請輸入買進價與股數');return;}
+  const sellV=document.getElementById('jSell').value;
+  trades.push({
+    stock:document.getElementById('jStock').value||'-',
+    buyDate:document.getElementById('jBuyDate').value,
+    sellDate:document.getElementById('jSellDate').value,
+    buy:buy, sell:sellV?parseFloat(sellV):null, qty:qty,
+    fee:document.getElementById('jFee').checked
+  });
+  saveTrades(); renderTrades();
+  ['jStock','jBuy','jSell','jQty'].forEach(id=>{});
+}
+function delTrade(i){trades.splice(i,1);saveTrades();renderTrades();}
+function renderTrades(){
+  const tb=document.getElementById('tBody');tb.innerHTML='';
+  let total=0,win=0,lose=0,open=0;
+  trades.forEach((t,i)=>{
+    const pnl=calcPnl(t);
+    if(pnl==null)open++;
+    else{total+=pnl;pnl>=0?win++:lose++;}
+    const ret=pnl==null?'-':((pnl/(t.buy*t.qty))*100).toFixed(2)+'%';
+    const cls=pnl==null?'':(pnl>=0?'up':'down');
+    tb.innerHTML+=`<tr>
+      <td>${t.stock}<br><span style="color:var(--muted);font-size:.75rem">${t.buyDate||''}${t.sellDate?' → '+t.sellDate:''}</span></td>
+      <td>${t.buy}</td><td>${t.sell??'持有中'}</td><td>${t.qty}</td>
+      <td class="${cls}">${pnl==null?'-':Math.round(pnl).toLocaleString()}</td>
+      <td class="${cls}">${ret}</td>
+      <td><span class="del" onclick="delTrade(${i})">刪除</span></td></tr>`;
+  });
+  const el=document.getElementById('tTotal');
+  el.textContent=Math.round(total).toLocaleString();
+  el.className='v '+(total>=0?'up':'down');
+  document.getElementById('tWin').textContent=win;
+  document.getElementById('tLose').textContent=lose;
+  document.getElementById('tRate').textContent=(win+lose)?((win/(win+lose)*100).toFixed(0)+'%'):'-';
+  document.getElementById('tOpen').textContent=open;
+}
+loadTrades();
+</script>
+</body>
+</html>
