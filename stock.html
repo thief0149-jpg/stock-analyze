@@ -57,7 +57,36 @@ canvas{width:100%;background:var(--panel2);border-radius:10px;margin-top:12px}
 
 <div class="tabs">
   <div class="tab active" data-t="analyze">📈 進出場分析</div>
+  <div class="tab" data-t="dashboard">📡 多檔看盤</div>
+  <div class="tab" data-t="backtest">📊 策略回測</div>
+  <div class="tab" data-t="paper">🎮 模擬交易</div>
   <div class="tab" data-t="journal">📒 交易紀錄</div>
+</div>
+
+<!-- ===== 多檔看盤頁 ===== -->
+<div id="page-dashboard" class="hidden">
+  <div class="card">
+    <h2>📡 多檔並排看盤（即時報價 × 訊號燈號）</h2>
+    <div class="row2">
+      <div>
+        <label>股票代號（可一次貼多個，用逗號/空白分隔）</label>
+        <input id="dashAddCode" placeholder="例如：2330, 0050, 2317">
+      </div>
+      <div>
+        <label>Cloudflare Worker 中繼網址</label>
+        <input id="dashProxyUrl" placeholder="https://twse-proxy.你的帳號.workers.dev">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <button onclick="addToWatchlist()">➕ 加入看盤清單</button>
+      <button class="ghost" onclick="saveDashProxy()">💾 儲存中繼網址</button>
+      <button id="dashLiveBtn" style="background:var(--accent);color:#1a1a1a" onclick="toggleDashLive()">▶️ 開始全部即時更新</button>
+    </div>
+    <div class="note" id="dashInfo" style="margin-top:8px"></div>
+  </div>
+
+  <div id="dashGrid" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))"></div>
+  <div class="note" style="margin-top:6px">💡 點卡片可跳到「進出場分析」頁看該檔完整指標、參考價位與走勢圖。即時更新開啟後每 10 秒依序刷新所有標的。</div>
 </div>
 
 <!-- ===== 分析頁 ===== -->
@@ -80,9 +109,29 @@ canvas{width:100%;background:var(--panel2);border-radius:10px;margin-top:12px}
     <label>收盤價序列（建議至少 30 筆，越多越準）</label>
     <textarea id="priceInput" placeholder="580, 585, 590, 588, 595 ..."></textarea>
     <button onclick="analyze()">開始分析</button>
-    <button style="background:var(--accent);color:#1a1a1a" onclick="reloadData(true)" id="fetchBtn">🔄 重新載入最新資料</button>
+    <button style="background:var(--accent);color:#1a1a1a" onclick="fetchOnline()" id="onlineBtn">🔍 上網抓取（輸入上方代號直接查）</button>
+    <button class="ghost" onclick="reloadData(true)" id="fetchBtn">🔄 重新載入雲端資料</button>
     <div class="note" id="fetchStatus"></div>
   </div>
+
+  <div class="card">
+    <h2>⚡ 即時報價（盤中每 10 秒更新，需先設定中繼網址）</h2>
+    <label>Cloudflare Worker 中繼網址（設定一次即可，會記住）</label>
+    <input id="proxyUrl" placeholder="https://twse-proxy.你的帳號.workers.dev">
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <button id="liveBtn" style="flex:1" onclick="toggleLive()">▶️ 開始即時報價</button>
+      <button class="ghost" onclick="saveProxy()">💾 儲存中繼網址</button>
+    </div>
+    <div id="liveBox" class="hidden" style="margin-top:14px">
+      <div class="grid">
+        <div class="stat"><div class="v" id="lvPrice">-</div><div class="l">即時成交價</div></div>
+        <div class="stat"><div class="v" id="lvChg">-</div><div class="l">漲跌（對昨收）</div></div>
+        <div class="stat"><div class="v" id="lvHL">-</div><div class="l">當日高 / 低</div></div>
+        <div class="stat"><div class="v" id="lvVol">-</div><div class="l">成交量</div></div>
+      </div>
+      <div class="note" id="lvInfo"></div>
+    </div>
+    <div class="note">說明：即時價會接在歷史收盤序列後面即時重算指標。非交易時間或尚無成交時，顯示昨收或「無成交」。</div>
 
   <div id="result" class="hidden">
     <div class="card">
@@ -112,6 +161,82 @@ canvas{width:100%;background:var(--panel2);border-radius:10px;margin-top:12px}
       <div class="note">⚠️ 本工具僅依技術指標提供參考訊號，非投資建議。股市有風險，進出場請自行判斷並控管資金。</div>
     </div>
   </div>
+</div>
+
+<!-- ===== 策略回測頁 ===== -->
+<div id="page-backtest" class="hidden">
+  <div class="card">
+    <h2>📊 策略回測：訊號進出場 vs 買進持有</h2>
+    <div class="note">用目前載入的歷史收盤價，模擬「照本工具訊號進出場」能不能贏過「第一天買進、放到最後什麼都不做」。本金 30 萬。</div>
+    <button onclick="runBacktest()" style="margin-top:12px">▶️ 開始回測（用目前載入的股票）</button>
+    <div class="note" id="btInfo" style="margin-top:8px"></div>
+  </div>
+
+  <div id="btResult" class="hidden">
+    <div class="card">
+      <h2 id="btTitle">回測結果</h2>
+      <table>
+        <thead><tr><th>策略</th><th>期末總值</th><th>損益</th><th>報酬率</th><th>交易次數</th></tr></thead>
+        <tbody id="btTable"></tbody>
+      </table>
+      <div class="signal" id="btVerdict" style="margin-top:14px"></div>
+    </div>
+    <div class="card">
+      <h2>訊號策略的每一筆交易</h2>
+      <table>
+        <thead><tr><th>第幾天</th><th>動作</th><th>價格</th><th>股數</th><th>當下現金</th></tr></thead>
+        <tbody id="btLog"></tbody>
+      </table>
+      <div class="note" id="btDiag" style="margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 模擬交易頁 ===== -->
+<div id="page-paper" class="hidden">
+  <div class="card">
+    <h2>🎮 模擬交易帳戶（虛擬 30 萬，練習用不碰真錢）</h2>
+    <div class="grid">
+      <div class="stat"><div class="v" id="mCash">300,000</div><div class="l">可用現金</div></div>
+      <div class="stat"><div class="v" id="mHoldVal">0</div><div class="l">持股市值</div></div>
+      <div class="stat"><div class="v" id="mTotal">300,000</div><div class="l">帳戶總值</div></div>
+      <div class="stat"><div class="v" id="mPnl">0</div><div class="l">總損益</div></div>
+      <div class="stat"><div class="v" id="mRet">0%</div><div class="l">總報酬率</div></div>
+    </div>
+    <div class="note" id="mPriceInfo" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card">
+    <h2>下單</h2>
+    <div class="row3">
+      <div><label>股票（預設帶入目前分析的標的）</label><input id="mStock" placeholder="2330 台積電"></div>
+      <div><label>價格（預設帶入最新收盤）</label><input id="mPrice" type="number" step="0.01"></div>
+      <div><label>股數（1 張 = 1000 股）</label><input id="mQty" type="number" value="1000" step="1000"></div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="warn" style="flex:1" onclick="paperBuy()">🔴 買進</button>
+      <button style="flex:1;background:var(--down)" onclick="paperSell()">🟢 賣出</button>
+    </div>
+    <div class="note" id="mMsg" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <h2>目前持股</h2>
+    <table>
+      <thead><tr><th>股票</th><th>股數</th><th>成本均價</th><th>現價</th><th>未實現損益</th><th>報酬率</th></tr></thead>
+      <tbody id="mHoldBody"><tr><td colspan="6" style="text-align:center;color:var(--muted)">尚無持股</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>交易歷史（模擬）</h2>
+    <table>
+      <thead><tr><th>時間</th><th>動作</th><th>股票</th><th>價格</th><th>股數</th><th>金額(含費)</th></tr></thead>
+      <tbody id="mLogBody"><tr><td colspan="6" style="text-align:center;color:var(--muted)">尚無交易</td></tr></tbody>
+    </table>
+    <button class="ghost" onclick="paperReset()" style="margin-top:12px">🔄 重置帳戶（清空持股與現金回到 30 萬）</button>
+  </div>
+  <div class="note">⚠️ 這是模擬練習，不涉及真實下單或金錢。手續費以 0.1425%（買賣各一次）、證交稅 0.3%（賣出）計算。</div>
 </div>
 
 <!-- ===== 交易紀錄頁 ===== -->
@@ -152,7 +277,118 @@ canvas{width:100%;background:var(--panel2);border-radius:10px;margin-top:12px}
 
 <script src="prices_data.js" id="dataScript"></script>
 <script>
-/* ---------- 自動載入 + 自動監看本機資料 ---------- */
+/* ---------- 線上抓取（FinMind，瀏覽器直接查，免改GitHub） ---------- */
+async function fetchOnline(){
+  const nameField=document.getElementById('stockName').value.trim();
+  // 從輸入框取出代號（開頭的數字，例如 "2330 台積電" -> 2330，"0050" -> 0050）
+  const m=nameField.match(/\d{4,6}/);
+  const st=document.getElementById('fetchStatus');
+  const btn=document.getElementById('onlineBtn');
+  if(!m){st.textContent='❌ 請在「股票名稱/代號」欄位輸入代號，例如 2330 或 0050';return;}
+  const code=m[0];
+  btn.disabled=true;btn.textContent='抓取中…';
+  st.textContent='正在向 FinMind 查詢 '+code+' 的日收盤價…';
+  // 取近一年（足夠算指標與回測）
+  const end=new Date();
+  const start=new Date(); start.setFullYear(start.getFullYear()-1);
+  const fmt=d=>d.toISOString().slice(0,10);
+  const url='https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice'+
+    '&data_id='+code+'&start_date='+fmt(start)+'&end_date='+fmt(end);
+  try{
+    const r=await fetch(url);
+    const j=await r.json();
+    if(!j.data||!j.data.length){
+      st.textContent='❌ 查無 '+code+' 的資料。可能是代號錯誤、或今日免費查詢次數已用完（每小時有限制，稍後再試）。';
+      btn.disabled=false;btn.textContent='🔍 上網抓取（輸入上方代號直接查）';return;
+    }
+    // FinMind 回傳已由舊到新排序；取收盤 close
+    const rows=j.data.filter(d=>d.close!=null && d.close>0);
+    const prices=rows.map(d=>d.close);
+    const nameGuess=rows[0].stock_id===code?code:code;
+    document.getElementById('stockName').value=code+(nameField.replace(/\d{4,6}/,'').trim()?(' '+nameField.replace(/\d{4,6}/,'').trim()):'');
+    document.getElementById('priceInput').value=prices.join(', ');
+    st.textContent='✅ 已抓取 '+code+' 共 '+prices.length+' 筆（'+rows[0].date+' ~ '+rows[rows.length-1].date+'，資料來源 FinMind）';
+    if(prices.length>=25)analyze();
+    else st.textContent+='｜⚠️ 筆數不足25，指標分析需更多資料';
+  }catch(e){
+    st.textContent='❌ 抓取失敗：'+e.message+'。FinMind 免費查詢有每小時次數限制，或網路暫時問題，請稍後再試；也可手動貼上收盤價。';
+  }
+  btn.disabled=false;btn.textContent='🔍 上網抓取（輸入上方代號直接查）';
+}
+
+/* ---------- 即時報價（透過 Cloudflare Worker 中繼） ---------- */
+let liveTimer=null, liveOn=false, baseHistory=null;
+
+async function saveProxy(){
+  const u=document.getElementById('proxyUrl').value.trim();
+  try{await window.storage.set('tw-proxy-url',u);}catch(e){}
+  document.getElementById('lvInfo').textContent='✅ 中繼網址已儲存';
+}
+async function loadProxy(){
+  try{const r=await window.storage.get('tw-proxy-url');if(r)document.getElementById('proxyUrl').value=r.value;}catch(e){}
+}
+
+function toggleLive(){
+  if(liveOn){stopLive();return;}
+  const url=document.getElementById('proxyUrl').value.trim();
+  const code=(document.getElementById('stockName').value.match(/\d{4,6}/)||[])[0];
+  const info=document.getElementById('lvInfo');
+  if(!url){info.textContent='❌ 請先填入 Cloudflare Worker 中繼網址並儲存';return;}
+  if(!code){info.textContent='❌ 請先在上方輸入股票代號';return;}
+  const raw=document.getElementById('priceInput').value.trim();
+  baseHistory=raw.split(/[,\s\n]+/).map(Number).filter(x=>!isNaN(x)&&x>0);
+  if(baseHistory.length<25){info.textContent='❌ 請先載入至少25筆歷史收盤（用上方「上網抓取」）再開即時';return;}
+  liveOn=true;
+  document.getElementById('liveBtn').textContent='⏹️ 停止即時報價';
+  document.getElementById('liveBox').classList.remove('hidden');
+  fetchLiveOnce();
+  liveTimer=setInterval(fetchLiveOnce,10000);
+}
+
+function stopLive(){
+  liveOn=false;
+  if(liveTimer){clearInterval(liveTimer);liveTimer=null;}
+  document.getElementById('liveBtn').textContent='▶️ 開始即時報價';
+}
+
+async function fetchLiveOnce(){
+  const url=document.getElementById('proxyUrl').value.trim().replace(/\/$/,'');
+  const code=(document.getElementById('stockName').value.match(/\d{4,6}/)||[])[0];
+  const info=document.getElementById('lvInfo');
+  try{
+    const r=await fetch(url+'/?stock='+code);
+    const j=await r.json();
+    if(j.error){info.textContent='⚠️ '+j.error;return;}
+    const px=parseFloat(j.price);
+    const yes=parseFloat(j.yesterday);
+    const hasDeal=!isNaN(px);
+    const shown=hasDeal?px:yes;
+    document.getElementById('lvPrice').textContent=isNaN(shown)?'-':shown.toFixed(2);
+    if(!isNaN(shown)&&!isNaN(yes)){
+      const chg=shown-yes, pct=chg/yes*100;
+      const el=document.getElementById('lvChg');
+      el.textContent=(chg>=0?'+':'')+chg.toFixed(2)+' ('+(chg>=0?'+':'')+pct.toFixed(2)+'%)';
+      el.className='v '+(chg>=0?'up':'down');
+      document.getElementById('lvPrice').className='v '+(chg>=0?'up':'down');
+    }
+    document.getElementById('lvHL').textContent=(j.high||'-')+' / '+(j.low||'-');
+    document.getElementById('lvVol').textContent=j.volume||'-';
+    info.textContent=(hasDeal?'✅ 即時成交':'ℹ️ 尚無成交，顯示昨收')+'｜資料時間 '+(j.time||'-')+' '+(j.date||'')+'｜每10秒更新';
+    if(hasDeal && baseHistory){
+      recomputeWithLive([...baseHistory, px]);
+    }
+  }catch(e){
+    info.textContent='❌ 連線中繼失敗：'+e.message+'（檢查網址是否正確、Worker 是否已部署）';
+  }
+}
+
+function recomputeWithLive(arr){
+  const saved=document.getElementById('priceInput').value;
+  document.getElementById('priceInput').value=arr.join(', ');
+  analyze();
+  document.getElementById('priceInput').value=saved;
+}
+
 let lastUpdated = null;
 
 function reloadData(manual){
@@ -196,7 +432,11 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   t.classList.add('active');
   document.getElementById('page-analyze').classList.toggle('hidden',t.dataset.t!=='analyze');
+  document.getElementById('page-dashboard').classList.toggle('hidden',t.dataset.t!=='dashboard');
+  document.getElementById('page-backtest').classList.toggle('hidden',t.dataset.t!=='backtest');
+  document.getElementById('page-paper').classList.toggle('hidden',t.dataset.t!=='paper');
   document.getElementById('page-journal').classList.toggle('hidden',t.dataset.t!=='journal');
+  if(t.dataset.t==='paper')syncPaperInputs();
 });
 
 /* ---------- 指標計算 ---------- */
@@ -366,6 +606,343 @@ function renderTrades(){
   document.getElementById('tOpen').textContent=open;
 }
 loadTrades();
+
+/* ---------- 模擬交易 ---------- */
+const START_CASH=300000;
+let paper={cash:START_CASH, holdings:{}, log:[]};
+
+function currentPrice(){
+  // 取分析頁最新收盤價當現價
+  const raw=document.getElementById('priceInput').value.trim();
+  const arr=raw.split(/[,\s\n]+/).map(Number).filter(x=>!isNaN(x)&&x>0);
+  return arr.length?arr[arr.length-1]:null;
+}
+function currentStock(){return document.getElementById('stockName').value.trim()||'-';}
+
+function syncPaperInputs(){
+  const p=currentPrice();
+  if(p&&!document.getElementById('mPrice').value)document.getElementById('mPrice').value=p;
+  if(!document.getElementById('mStock').value)document.getElementById('mStock').value=currentStock();
+  const info=document.getElementById('mPriceInfo');
+  info.textContent=p?('目前分析標的：'+currentStock()+'，最新價 '+p+'（下單預設帶入此價，可自行修改）'):
+    '尚未載入股價，請先到「進出場分析」頁載入資料。';
+  renderPaper();
+}
+
+async function loadPaper(){
+  try{const r=await window.storage.get('tw-paper-account');if(r)paper=JSON.parse(r.value);}
+  catch(e){}
+  renderPaper();
+}
+async function savePaper(){
+  try{await window.storage.set('tw-paper-account',JSON.stringify(paper));}catch(e){}
+}
+
+function paperBuy(){
+  const stock=document.getElementById('mStock').value.trim()||currentStock();
+  const price=parseFloat(document.getElementById('mPrice').value);
+  const qty=parseInt(document.getElementById('mQty').value);
+  const msg=document.getElementById('mMsg');
+  if(!price||!qty||qty<=0){msg.textContent='❌ 請輸入有效的價格與股數';return;}
+  const fee=Math.max(1,Math.round(price*qty*0.001425));
+  const cost=price*qty+fee;
+  if(cost>paper.cash){msg.textContent='❌ 現金不足（需 '+Math.round(cost).toLocaleString()+'，可用 '+Math.round(paper.cash).toLocaleString()+'）';return;}
+  paper.cash-=cost;
+  const h=paper.holdings[stock]||{qty:0,cost:0};
+  h.cost=h.cost+price*qty;      // 累計成本（不含賣出）
+  h.qty+=qty;
+  paper.holdings[stock]=h;
+  paper.log.unshift({t:new Date().toLocaleString('zh-TW'),act:'買進',stock,price,qty,amt:Math.round(cost)});
+  msg.textContent='✅ 買進 '+stock+' '+qty+' 股 @ '+price+'（手續費 '+fee+'）';
+  savePaper();renderPaper();
+}
+
+function paperSell(){
+  const stock=document.getElementById('mStock').value.trim()||currentStock();
+  const price=parseFloat(document.getElementById('mPrice').value);
+  const qty=parseInt(document.getElementById('mQty').value);
+  const msg=document.getElementById('mMsg');
+  const h=paper.holdings[stock];
+  if(!h||h.qty<=0){msg.textContent='❌ 你沒有持有 '+stock;return;}
+  if(!price||!qty||qty<=0){msg.textContent='❌ 請輸入有效的價格與股數';return;}
+  if(qty>h.qty){msg.textContent='❌ 賣出股數超過持股（持有 '+h.qty+'）';return;}
+  const fee=Math.max(1,Math.round(price*qty*0.001425));
+  const tax=Math.round(price*qty*0.003);
+  const proceeds=price*qty-fee-tax;
+  const avgCost=h.cost/h.qty;
+  const realized=proceeds-avgCost*qty;
+  paper.cash+=proceeds;
+  h.cost-=avgCost*qty;
+  h.qty-=qty;
+  if(h.qty<=0)delete paper.holdings[stock];
+  paper.log.unshift({t:new Date().toLocaleString('zh-TW'),act:'賣出',stock,price,qty,amt:Math.round(proceeds),realized:Math.round(realized)});
+  msg.textContent='✅ 賣出 '+stock+' '+qty+' 股 @ '+price+'（費 '+fee+' 稅 '+tax+'）｜此筆'+(realized>=0?'獲利':'虧損')+' '+Math.round(realized).toLocaleString();
+  savePaper();renderPaper();
+}
+
+function paperReset(){
+  if(!confirm('確定要重置模擬帳戶嗎？現金回到 30 萬，持股與歷史全部清空。'))return;
+  paper={cash:START_CASH,holdings:{},log:[]};
+  savePaper();renderPaper();
+  document.getElementById('mMsg').textContent='已重置帳戶。';
+}
+
+function renderPaper(){
+  const px=currentPrice();
+  // 持股表
+  const hb=document.getElementById('mHoldBody');
+  const stocks=Object.keys(paper.holdings);
+  let holdVal=0;
+  if(stocks.length===0){hb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted)">尚無持股</td></tr>';}
+  else{
+    hb.innerHTML='';
+    stocks.forEach(s=>{
+      const h=paper.holdings[s];
+      const avg=h.cost/h.qty;
+      const cur=px||avg;              // 沒現價就用成本
+      const val=cur*h.qty; holdVal+=val;
+      const upnl=(cur-avg)*h.qty;
+      const ret=(upnl/(avg*h.qty)*100);
+      const cls=upnl>=0?'up':'down';
+      hb.innerHTML+=`<tr><td>${s}</td><td>${h.qty}</td><td>${avg.toFixed(2)}</td><td>${cur.toFixed(2)}</td>
+        <td class="${cls}">${Math.round(upnl).toLocaleString()}</td><td class="${cls}">${ret.toFixed(2)}%</td></tr>`;
+    });
+  }
+  // 歷史
+  const lb=document.getElementById('mLogBody');
+  if(paper.log.length===0){lb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted)">尚無交易</td></tr>';}
+  else{
+    lb.innerHTML='';
+    paper.log.slice(0,50).forEach(l=>{
+      const actCls=l.act==='買進'?'up':'down';
+      lb.innerHTML+=`<tr><td style="font-size:.78rem">${l.t}</td><td class="${actCls}">${l.act}</td>
+        <td>${l.stock}</td><td>${l.price}</td><td>${l.qty}</td><td>${l.amt.toLocaleString()}</td></tr>`;
+    });
+  }
+  // 帳戶總覽
+  const total=paper.cash+holdVal;
+  const pnl=total-START_CASH;
+  document.getElementById('mCash').textContent=Math.round(paper.cash).toLocaleString();
+  document.getElementById('mHoldVal').textContent=Math.round(holdVal).toLocaleString();
+  document.getElementById('mTotal').textContent=Math.round(total).toLocaleString();
+  const pe=document.getElementById('mPnl');
+  pe.textContent=Math.round(pnl).toLocaleString(); pe.className='v '+(pnl>=0?'up':'down');
+  const re=document.getElementById('mRet');
+  re.textContent=(pnl/START_CASH*100).toFixed(2)+'%'; re.className='v '+(pnl>=0?'up':'down');
+}
+loadPaper();
+loadProxy();
+
+/* ---------- 策略回測 ---------- */
+function btScoreAt(a,i){
+  if(i<20)return {score:null,sig:'中性'};
+  const last=a[i], ma5=sma(a,5,i), ma20=sma(a,20,i);
+  const ma5p=sma(a,5,i-1), ma20p=sma(a,20,i-1);
+  const R=rsi(a.slice(0,i+1)), {K,D}=kd(a.slice(0,i+1));
+  let s=0;
+  if(ma5p<=ma20p && ma5>ma20)s+=2;
+  if(ma5p>=ma20p && ma5<ma20)s-=2;
+  s+= (ma5>ma20)?1:-1;
+  if(R!=null){ if(R<30)s+=2; else if(R>70)s-=2; }
+  if(K>D && K<80)s+=1;
+  if(K<D && K>20)s-=1;
+  if(last>ma20*1.1)s-=1;
+  return {score:s, sig: s>=3?'偏多':(s<=-3?'偏空':'中性')};
+}
+
+function runBacktest(){
+  const raw=document.getElementById('priceInput').value.trim();
+  const prices=raw.split(/[,\s\n]+/).map(Number).filter(x=>!isNaN(x)&&x>0);
+  const info=document.getElementById('btInfo');
+  if(prices.length<30){info.textContent='❌ 資料至少需要 30 筆才能回測，目前只有 '+prices.length+' 筆。';return;}
+  const name=document.getElementById('stockName').value||'股票';
+  const C0=300000;
+
+  // 訊號策略：偏多全押、偏空全出（可買零股）
+  let cash=C0, shares=0, log=[];
+  const dist={偏多:0,偏空:0,中性:0}; let smin=99,smax=-99;
+  for(let i=0;i<prices.length;i++){
+    const {score,sig}=btScoreAt(prices,i);
+    if(i>=20){dist[sig]++; if(score<smin)smin=score; if(score>smax)smax=score;}
+    const px=prices[i];
+    if(sig==='偏多' && shares===0){
+      const qty=Math.floor(cash/(px*1.001425));
+      if(qty>0){const fee=Math.max(1,Math.round(px*qty*0.001425));cash-=px*qty+fee;shares=qty;log.push([i,'買進',px,qty,Math.round(cash)]);}
+    }else if(sig==='偏空' && shares>0){
+      const fee=Math.max(1,Math.round(px*shares*0.001425)), tax=Math.round(px*shares*0.003);
+      cash+=px*shares-fee-tax; log.push([i,'賣出',px,shares,Math.round(cash)]); shares=0;
+    }
+  }
+  const stratFinal=cash+shares*prices[prices.length-1];
+
+  // 買進持有
+  const p0=prices[0], pN=prices[prices.length-1];
+  const bhQty=Math.floor(C0/(p0*1.001425));
+  const bhFee=Math.round(p0*bhQty*0.001425);
+  const bhFinal=C0-p0*bhQty-bhFee+bhQty*pN;
+
+  // 顯示
+  document.getElementById('btResult').classList.remove('hidden');
+  document.getElementById('btTitle').textContent=name+' 回測結果（'+prices.length+' 個交易日）';
+  const pnlS=stratFinal-C0, pnlB=bhFinal-C0;
+  const fmt=v=>Math.round(v).toLocaleString();
+  const cls=v=>v>=0?'up':'down';
+  document.getElementById('btTable').innerHTML=
+    `<tr><td>本工具訊號進出場</td><td>${fmt(stratFinal)}</td><td class="${cls(pnlS)}">${pnlS>=0?'+':''}${fmt(pnlS)}</td><td class="${cls(pnlS)}">${(pnlS/C0*100).toFixed(2)}%</td><td>${log.length}</td></tr>`+
+    `<tr><td>買進持有（放著不動）</td><td>${fmt(bhFinal)}</td><td class="${cls(pnlB)}">${pnlB>=0?'+':''}${fmt(pnlB)}</td><td class="${cls(pnlB)}">${(pnlB/C0*100).toFixed(2)}%</td><td>1</td></tr>`;
+
+  const v=document.getElementById('btVerdict'); v.className='signal';
+  if(pnlS>pnlB){v.classList.add('sig-buy');v.textContent='✅ 這段期間，訊號策略贏過買進持有 '+fmt(pnlS-pnlB)+' 元';}
+  else if(pnlS<pnlB){v.classList.add('sig-sell');v.textContent='⚠️ 這段期間，訊號策略輸給買進持有 '+fmt(pnlB-pnlS)+' 元（不如什麼都不做）';}
+  else{v.classList.add('sig-hold');v.textContent='兩者打平';}
+
+  const lb=document.getElementById('btLog');
+  if(log.length===0)lb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--muted)">整段期間沒有觸發任何進出場訊號</td></tr>';
+  else lb.innerHTML=log.map(l=>`<tr><td>第${l[0]}天</td><td class="${l[1]==='買進'?'up':'down'}">${l[1]}</td><td>${l[2]}</td><td>${l[3]}</td><td>${l[4].toLocaleString()}</td></tr>`).join('');
+
+  document.getElementById('btDiag').innerHTML=
+    '訊號分佈（第20天起）：偏多 '+dist.偏多+' 天、偏空 '+dist.偏空+' 天、中性 '+dist.中性+' 天｜評分範圍 '+smin+' ~ '+smax+'<br>'+
+    '※ 單一標的、單一區間的回測僅供參考，換股票或換期間結果可能完全不同。這不能證明策略永遠有效或無效。';
+  info.textContent='✅ 回測完成（'+name+'，'+prices.length+' 筆）';
+}
+
+/* ---------- 多檔看盤儀表板 ---------- */
+let watchlist=[];       // [{code,name,prices,live:{price,yesterday,high,low,volume,time}}]
+let dashLiveOn=false, dashLiveTimer=null, dashPolling=false;
+
+async function saveDashProxy(){
+  const u=document.getElementById('dashProxyUrl').value.trim();
+  try{await window.storage.set('tw-proxy-url',u);}catch(e){}
+  document.getElementById('proxyUrl').value=u;  // 兩處中繼網址同步
+  document.getElementById('dashInfo').textContent='✅ 中繼網址已儲存';
+}
+async function loadDashProxy(){
+  try{const r=await window.storage.get('tw-proxy-url');if(r)document.getElementById('dashProxyUrl').value=r.value;}catch(e){}
+}
+async function loadWatchlist(){
+  try{const r=await window.storage.get('tw-watchlist');if(r)watchlist=JSON.parse(r.value);}catch(e){}
+  renderDashboard();
+}
+async function saveWatchlist(){
+  try{await window.storage.set('tw-watchlist',JSON.stringify(watchlist));}catch(e){}
+}
+
+async function fetchHistFor(code){
+  const end=new Date(); const start=new Date(); start.setFullYear(start.getFullYear()-1);
+  const fmt=d=>d.toISOString().slice(0,10);
+  const url='https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id='+code+
+    '&start_date='+fmt(start)+'&end_date='+fmt(end);
+  const r=await fetch(url); const j=await r.json();
+  if(!j.data||!j.data.length)throw new Error('查無資料');
+  const rows=j.data.filter(d=>d.close!=null&&d.close>0);
+  return rows.map(d=>d.close);
+}
+
+async function addToWatchlist(){
+  const raw=document.getElementById('dashAddCode').value.trim();
+  const info=document.getElementById('dashInfo');
+  if(!raw){info.textContent='❌ 請輸入股票代號';return;}
+  const codes=[...new Set(raw.split(/[,\s]+/).filter(c=>/^\d{4,6}$/.test(c)))];
+  if(!codes.length){info.textContent='❌ 沒有偵測到有效代號';return;}
+  for(const code of codes){
+    if(watchlist.find(w=>w.code===code)){continue;}
+    info.textContent='正在抓取 '+code+' 的歷史資料…';
+    try{
+      const prices=await fetchHistFor(code);
+      watchlist.push({code,name:code,prices,live:null});
+      renderDashboard();
+    }catch(e){
+      info.textContent='⚠️ '+code+' 抓取失敗：'+e.message;
+    }
+  }
+  document.getElementById('dashAddCode').value='';
+  saveWatchlist();
+  info.textContent='✅ 看盤清單已更新，共 '+watchlist.length+' 檔';
+}
+
+function removeFromWatchlist(code){
+  watchlist=watchlist.filter(w=>w.code!==code);
+  saveWatchlist(); renderDashboard();
+}
+
+function openInAnalyze(code){
+  const w=watchlist.find(x=>x.code===code); if(!w)return;
+  document.getElementById('stockName').value=w.code+(w.name&&w.name!==w.code?' '+w.name:'');
+  document.getElementById('priceInput').value=w.prices.join(', ');
+  document.querySelector('.tab[data-t="analyze"]').click();
+  analyze();
+}
+
+function toggleDashLive(){
+  if(dashLiveOn){
+    dashLiveOn=false;
+    if(dashLiveTimer){clearInterval(dashLiveTimer);dashLiveTimer=null;}
+    document.getElementById('dashLiveBtn').textContent='▶️ 開始全部即時更新';
+    return;
+  }
+  const url=document.getElementById('dashProxyUrl').value.trim();
+  const info=document.getElementById('dashInfo');
+  if(!url){info.textContent='❌ 請先填入並儲存中繼網址';return;}
+  if(!watchlist.length){info.textContent='❌ 請先加入至少一檔股票';return;}
+  dashLiveOn=true;
+  document.getElementById('dashLiveBtn').textContent='⏹️ 停止全部即時更新';
+  pollAllDash();
+  dashLiveTimer=setInterval(pollAllDash,10000);
+}
+
+async function pollAllDash(){
+  if(dashPolling)return;   // 避免上一輪還沒跑完就重疊
+  dashPolling=true;
+  const url=document.getElementById('dashProxyUrl').value.trim().replace(/\/$/,'');
+  for(const w of watchlist){
+    try{
+      const r=await fetch(url+'/?stock='+w.code);
+      const j=await r.json();
+      if(!j.error){
+        w.name=j.name||w.name;
+        w.live={price:parseFloat(j.price),yesterday:parseFloat(j.yesterday),
+                high:j.high,low:j.low,volume:j.volume,time:j.time};
+      }
+    }catch(e){/* 單檔失敗不影響其他檔 */}
+    renderDashboard();
+    await new Promise(res=>setTimeout(res,300));  // 每檔間隔0.3秒，避免瞬間打太密集
+  }
+  dashPolling=false;
+}
+
+function renderDashboard(){
+  const grid=document.getElementById('dashGrid');
+  if(!watchlist.length){
+    grid.innerHTML='<div class="card" style="grid-column:1/-1;text-align:center;color:var(--muted)">尚未加入任何股票，請在上方輸入代號並按「加入看盤清單」</div>';
+    return;
+  }
+  grid.innerHTML=watchlist.map(w=>{
+    const arr=[...w.prices];
+    const hasLive=w.live&&!isNaN(w.live.price);
+    if(hasLive)arr.push(w.live.price);
+    const {sig}=arr.length>=25?btScoreAt(arr,arr.length-1):{sig:'資料不足'};
+    const sigCls=sig==='偏多'?'sig-buy':(sig==='偏空'?'sig-sell':'sig-hold');
+    const sigIcon=sig==='偏多'?'🔴':(sig==='偏空'?'🟢':'⚪');
+    const px=hasLive?w.live.price:w.prices[w.prices.length-1];
+    const yes=w.live?w.live.yesterday:w.prices[w.prices.length-2];
+    let chgHtml='<span style="color:var(--muted)">-</span>';
+    if(!isNaN(px)&&!isNaN(yes)&&yes){
+      const chg=px-yes, pct=chg/yes*100;
+      chgHtml='<span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+' ('+(chg>=0?'+':'')+pct.toFixed(2)+'%)</span>';
+    }
+    return `<div class="card" style="cursor:pointer;position:relative" onclick="openInAnalyze('${w.code}')">
+      <span class="del" style="position:absolute;top:14px;right:16px" onclick="event.stopPropagation();removeFromWatchlist('${w.code}')">✕</span>
+      <div style="font-weight:700;font-size:1.05rem">${w.code} ${w.name&&w.name!==w.code?w.name:''}</div>
+      <div style="font-size:1.6rem;font-weight:700;margin-top:6px">${isNaN(px)?'-':px.toFixed(2)}</div>
+      <div style="margin-top:2px">${chgHtml}</div>
+      <div class="signal ${sigCls}" style="margin-top:10px;padding:8px;font-size:.85rem">${sigIcon} ${sig}</div>
+      <div class="note" style="margin-top:6px">${hasLive?('更新 '+w.live.time):'尚未開啟即時更新'}</div>
+    </div>`;
+  }).join('');
+}
+
+loadDashProxy();
+loadWatchlist();
 </script>
 </body>
 </html>
