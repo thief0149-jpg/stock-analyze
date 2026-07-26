@@ -277,6 +277,22 @@ canvas{width:100%;background:var(--panel2);border-radius:10px;margin-top:12px}
 
 <script src="prices_data.js" id="dataScript"></script>
 <script>
+/* ---------- 儲存相容層：claude.ai 用 window.storage，一般網站(GitHub Pages/本機)用 localStorage ---------- */
+const hasClaudeStorage = typeof window.storage !== 'undefined';
+async function lsGet(key){
+  if(hasClaudeStorage){
+    try{return await window.storage.get(key);}catch(e){return null;}
+  }
+  const v=localStorage.getItem(key);
+  return v===null?null:{key,value:v};
+}
+async function lsSet(key,value){
+  if(hasClaudeStorage){
+    try{return await window.storage.set(key,value);}catch(e){return null;}
+  }
+  try{localStorage.setItem(key,value);return {key,value};}catch(e){return null;}
+}
+
 /* ---------- 線上抓取（FinMind，瀏覽器直接查，免改GitHub） ---------- */
 async function fetchOnline(){
   const nameField=document.getElementById('stockName').value.trim();
@@ -321,11 +337,11 @@ let liveTimer=null, liveOn=false, baseHistory=null;
 
 async function saveProxy(){
   const u=document.getElementById('proxyUrl').value.trim();
-  try{await window.storage.set('tw-proxy-url',u);}catch(e){}
+  try{await lsSet('tw-proxy-url',u);}catch(e){}
   document.getElementById('lvInfo').textContent='✅ 中繼網址已儲存';
 }
 async function loadProxy(){
-  try{const r=await window.storage.get('tw-proxy-url');if(r)document.getElementById('proxyUrl').value=r.value;}catch(e){}
+  try{const r=await lsGet('tw-proxy-url');if(r)document.getElementById('proxyUrl').value=r.value;}catch(e){}
 }
 
 function toggleLive(){
@@ -550,12 +566,12 @@ function drawChart(p){
 /* ---------- 交易紀錄 (persistent storage) ---------- */
 let trades=[];
 async function loadTrades(){
-  try{const r=await window.storage.get('tw-stock-trades');trades=r?JSON.parse(r.value):[];}
+  try{const r=await lsGet('tw-stock-trades');trades=r?JSON.parse(r.value):[];}
   catch(e){trades=[];}
   renderTrades();
 }
 async function saveTrades(){
-  try{await window.storage.set('tw-stock-trades',JSON.stringify(trades));}
+  try{await lsSet('tw-stock-trades',JSON.stringify(trades));}
   catch(e){console.error('儲存失敗',e);}
 }
 function calcPnl(t){
@@ -630,12 +646,12 @@ function syncPaperInputs(){
 }
 
 async function loadPaper(){
-  try{const r=await window.storage.get('tw-paper-account');if(r)paper=JSON.parse(r.value);}
+  try{const r=await lsGet('tw-paper-account');if(r)paper=JSON.parse(r.value);}
   catch(e){}
   renderPaper();
 }
 async function savePaper(){
-  try{await window.storage.set('tw-paper-account',JSON.stringify(paper));}catch(e){}
+  try{await lsSet('tw-paper-account',JSON.stringify(paper));}catch(e){}
 }
 
 function paperBuy(){
@@ -812,19 +828,19 @@ let dashLiveOn=false, dashLiveTimer=null, dashPolling=false;
 
 async function saveDashProxy(){
   const u=document.getElementById('dashProxyUrl').value.trim();
-  try{await window.storage.set('tw-proxy-url',u);}catch(e){}
+  try{await lsSet('tw-proxy-url',u);}catch(e){}
   document.getElementById('proxyUrl').value=u;  // 兩處中繼網址同步
   document.getElementById('dashInfo').textContent='✅ 中繼網址已儲存';
 }
 async function loadDashProxy(){
-  try{const r=await window.storage.get('tw-proxy-url');if(r)document.getElementById('dashProxyUrl').value=r.value;}catch(e){}
+  try{const r=await lsGet('tw-proxy-url');if(r)document.getElementById('dashProxyUrl').value=r.value;}catch(e){}
 }
 async function loadWatchlist(){
-  try{const r=await window.storage.get('tw-watchlist');if(r)watchlist=JSON.parse(r.value);}catch(e){}
+  try{const r=await lsGet('tw-watchlist');if(r)watchlist=JSON.parse(r.value);}catch(e){}
   renderDashboard();
 }
 async function saveWatchlist(){
-  try{await window.storage.set('tw-watchlist',JSON.stringify(watchlist));}catch(e){}
+  try{await lsSet('tw-watchlist',JSON.stringify(watchlist));}catch(e){}
 }
 
 async function fetchHistFor(code){
