@@ -976,7 +976,9 @@ function renderDashboard(){
           <span style="color:var(--muted)">近20日支撐</span><span>${d.support.toFixed(1)}</span>
           <span style="color:var(--muted)">近20日壓力</span><span>${d.resist.toFixed(1)}</span>
         </div>
-        <button style="margin-top:10px;width:100%;font-size:.8rem;padding:6px" onclick="event.stopPropagation();openInAnalyze('${w.code}')">看完整分析與走勢圖 →</button>
+        <canvas class="dashChart" data-code="${w.code}" height="140" style="width:100%;margin-top:10px;background:var(--panel2);border-radius:8px"></canvas>
+        <div class="note" style="margin-top:4px">白=收盤 <span style="color:var(--accent)">黃=MA5</span> <span style="color:var(--accent2)">藍=MA20</span>（近60日）</div>
+        <button style="margin-top:8px;width:100%;font-size:.8rem;padding:6px" onclick="event.stopPropagation();openInAnalyze('${w.code}')">想看更大的圖＋參考價位？跳完整分析頁 →</button>
       </div>`;
     }else if(expanded){
       detailHtml='<div class="note" style="margin-top:8px">資料筆數不足，無法顯示指標</div>';
@@ -991,6 +993,32 @@ function renderDashboard(){
       ${detailHtml}
     </div>`;
   }).join('');
+
+  // 畫每張展開卡片的迷你走勢圖
+  document.querySelectorAll('.dashChart').forEach(cv=>{
+    const code=cv.dataset.code;
+    const w=watchlist.find(x=>x.code===code); if(!w)return;
+    const arr=[...w.prices];
+    if(w.live&&!isNaN(w.live.price))arr.push(w.live.price);
+    drawMiniChart(cv, arr.slice(-60));   // 近60筆
+  });
+}
+
+function drawMiniChart(cv, p){
+  if(p.length<2)return;
+  const ctx=cv.getContext('2d');
+  cv.width=cv.clientWidth*2; cv.height=280;
+  const W=cv.width,H=cv.height,pad=8;
+  const min=Math.min(...p)*0.998, max=Math.max(...p)*1.002;
+  const x=i=>pad+(W-pad*2)*i/(p.length-1);
+  const y=v=>H-pad-(H-pad*2)*(v-min)/(max-min);
+  const maAt=(a,n,i)=>{if(i<n-1)return null;let s=0;for(let j=i-n+1;j<=i;j++)s+=a[j];return s/n;};
+  const line=(vals,col,w)=>{ctx.strokeStyle=col;ctx.lineWidth=w;ctx.beginPath();let st=false;
+    vals.forEach((v,i)=>{if(v==null)return;const px=x(i),py=y(v);if(!st){ctx.moveTo(px,py);st=true;}else ctx.lineTo(px,py);});ctx.stroke();};
+  ctx.clearRect(0,0,W,H);
+  line(p,'#e8edf2',3);
+  line(p.map((_,i)=>maAt(p,5,i)),'#f2b544',2);
+  line(p.map((_,i)=>maAt(p,20,i)),'#5aa9e6',2);
 }
 
 loadDashProxy();
