@@ -881,12 +881,29 @@ function removeFromWatchlist(code){
   saveWatchlist(); renderDashboard();
 }
 
+let dashExpanded={};   // 記住哪些卡片被展開
+
+function toggleCard(code){
+  dashExpanded[code]=!dashExpanded[code];
+  renderDashboard();
+}
+
 function openInAnalyze(code){
   const w=watchlist.find(x=>x.code===code); if(!w)return;
   document.getElementById('stockName').value=w.code+(w.name&&w.name!==w.code?' '+w.name:'');
   document.getElementById('priceInput').value=w.prices.join(', ');
   document.querySelector('.tab[data-t="analyze"]').click();
   analyze();
+}
+
+// 計算某檔的詳細指標（給卡片展開用）
+function cardDetail(arr){
+  const i=arr.length-1;
+  const ma5=sma(arr,5,i), ma20=sma(arr,20,i);
+  const R=rsi(arr), {K,D}=kd(arr);
+  const win20=arr.slice(-20);
+  const support=Math.min(...win20), resist=Math.max(...win20);
+  return {ma5,ma20,R,K,D,support,resist};
 }
 
 function toggleDashLive(){
@@ -946,13 +963,32 @@ function renderDashboard(){
       const chg=px-yes, pct=chg/yes*100;
       chgHtml='<span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+' ('+(chg>=0?'+':'')+pct.toFixed(2)+'%)</span>';
     }
-    return `<div class="card" style="cursor:pointer;position:relative" onclick="openInAnalyze('${w.code}')">
+    const expanded=dashExpanded[w.code];
+    let detailHtml='';
+    if(expanded && arr.length>=25){
+      const d=cardDetail(arr);
+      detailHtml=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:.82rem;line-height:1.9">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px">
+          <span style="color:var(--muted)">MA5</span><span>${d.ma5.toFixed(2)}</span>
+          <span style="color:var(--muted)">MA20</span><span>${d.ma20.toFixed(2)}</span>
+          <span style="color:var(--muted)">RSI(14)</span><span>${d.R.toFixed(1)}</span>
+          <span style="color:var(--muted)">K / D</span><span>${d.K.toFixed(1)} / ${d.D.toFixed(1)}</span>
+          <span style="color:var(--muted)">近20日支撐</span><span>${d.support.toFixed(1)}</span>
+          <span style="color:var(--muted)">近20日壓力</span><span>${d.resist.toFixed(1)}</span>
+        </div>
+        <button style="margin-top:10px;width:100%;font-size:.8rem;padding:6px" onclick="event.stopPropagation();openInAnalyze('${w.code}')">看完整分析與走勢圖 →</button>
+      </div>`;
+    }else if(expanded){
+      detailHtml='<div class="note" style="margin-top:8px">資料筆數不足，無法顯示指標</div>';
+    }
+    return `<div class="card" style="cursor:pointer;position:relative" onclick="toggleCard('${w.code}')">
       <span class="del" style="position:absolute;top:14px;right:16px" onclick="event.stopPropagation();removeFromWatchlist('${w.code}')">✕</span>
       <div style="font-weight:700;font-size:1.05rem">${w.code} ${w.name&&w.name!==w.code?w.name:''}</div>
       <div style="font-size:1.6rem;font-weight:700;margin-top:6px">${isNaN(px)?'-':px.toFixed(2)}</div>
       <div style="margin-top:2px">${chgHtml}</div>
       <div class="signal ${sigCls}" style="margin-top:10px;padding:8px;font-size:.85rem">${sigIcon} ${sig}</div>
-      <div class="note" style="margin-top:6px">${hasLive?('更新 '+w.live.time):'尚未開啟即時更新'}</div>
+      <div class="note" style="margin-top:6px">${hasLive?('更新 '+w.live.time):'尚未開啟即時更新'}${expanded?'':' ・點卡片看指標'}</div>
+      ${detailHtml}
     </div>`;
   }).join('');
 }
